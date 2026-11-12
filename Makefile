@@ -1,5 +1,5 @@
 TARGET := iphone:clang:latest:15.0
-ARCHS := arm64 arm64e
+ARCHS := arm64
 INSTALL_TARGET_PROCESSES := Free\ Fire
 
 include $(THEOS)/makefiles/common.mk
@@ -9,8 +9,5 @@ FFMenu_FILES := Tweak.xm VIPMenu.mm
 FFMenu_CFLAGS := -fobjc-arc -std=c++17 -I.
 FFMenu_FRAMEWORKS := UIKit Foundation QuartzCore
 FFMenu_INSTALL_PATH := /usr/lib
-
-# Dòng quan trọng nhất: Dùng dynamic_lookup thay vì link substrate
-FFMenu_LDFLAGS := -Wl,-undefined,dynamic_lookup
 
 include $(THEOS_MAKE_PATH)/library.mk
