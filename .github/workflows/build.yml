@@ -7,14 +7,15 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
       
       - name: Setup Theos
         run: |
           brew install ldid xz make
-          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          export THEOS=$HOME/theos
+          git clone --recursive https://github.com/theos/theos.git $THEOS
           
       - name: Download SDK
         run: |
