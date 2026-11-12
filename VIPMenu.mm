@@ -6,7 +6,7 @@
 #include <cmath>
 
 // ==========================================
-// 1. HÀM TOÀN CỤC (Dùng chung)
+// 1. HÀM ĐỌC BỘ NHỚ
 // ==========================================
 inline uintptr_t getBaseAddress() { return (uintptr_t)_dyld_get_image_header(0); }
 
@@ -96,6 +96,7 @@ bool isEspEnabled = false;
         CGPoint feetScreen = [self worldToScreen:fX y:fY z:fZ];
         if (headScreen.x < 0 || feetScreen.x < 0) continue;
 
+        // Làm mượt (Smooth ESP)
         NSString *uid = enemy[@"uid"];
         NSValue *lastVal = self.lastPositions[uid];
         if (lastVal) {
@@ -110,18 +111,49 @@ bool isEspEnabled = false;
         float boxWidth = boxHeight * 0.45f;
         CGRect boxRect = CGRectMake(headScreen.x - boxWidth/2, headScreen.y, boxWidth, boxHeight);
         
+        // Vẽ Box
         CGContextStrokeRect(ctx, boxRect);
+        
+        // Vẽ Đường kẻ (Snapline)
         CGContextMoveToPoint(ctx, self.bounds.size.width / 2, self.bounds.size.height);
         CGContextAddLineToPoint(ctx, headScreen.x, headScreen.y);
         CGContextStrokePath(ctx);
     }
 }
 
-- (NSArray *)getEnemyList { return @[]; /* Đọc bộ nhớ */ }
+- (NSArray *)getEnemyList {
+    NSMutableArray *enemies = [NSMutableArray array];
+    uintptr_t base = getBaseAddress();
+    uintptr_t entityList = readMem<uintptr_t>(base + ADDR_ENTITY_LIST);
+    uintptr_t localPlayer = readMem<uintptr_t>(base + ADDR_LOCAL_PLAYER);
+    if (!entityList || !localPlayer) return enemies;
+
+    int myTeam = readMem<int>(localPlayer + OFF_PLAYER_TEAM);
+
+    for (int i = 0; i < 50; i++) {
+        uintptr_t player = readMem<uintptr_t>(entityList + (i * 0x8));
+        if (!player || player == localPlayer) continue;
+
+        bool isDead = readMem<bool>(player + OFF_PLAYER_ISDEAD);
+        int team = readMem<int>(player + OFF_PLAYER_TEAM);
+
+        if (!isDead && team != myTeam) {
+            Vector3 head = readMem<Vector3>(player + OFF_BONE_HEAD);
+            Vector3 feet = readMem<Vector3>(player + OFF_BONE_LFOOT);
+            
+            [enemies addObject:@{
+                @"headX": @(head.x), @"headY": @(head.y), @"headZ": @(head.z),
+                @"feetX": @(feet.x), @"feetY": @(feet.y), @"feetZ": @(feet.z),
+                @"uid": [NSString stringWithFormat:@"%d", i]
+            }];
+        }
+    }
+    return enemies;
+}
 @end
 
 // ==========================================
-// 3. LỚP MENU (VIPMenu) - ĐÃ FIX CELL VÀ ẢNH
+// 3. LỚP MENU (VIPMenu)
 // ==========================================
 @interface VIPMenu () <UITableViewDelegate, UITableViewDataSource>
 @property (nonatomic, strong) UIView *containerView;
@@ -159,7 +191,6 @@ bool isEspEnabled = false;
 }
 
 - (void)setupUI {
-    // Nút bong bóng ảnh Go-Kart
     UIButton *floatingBtn = [UIButton buttonWithType:UIButtonTypeCustom];
     floatingBtn.frame = CGRectMake(20, 100, 60, 60);
     
@@ -190,7 +221,6 @@ bool isEspEnabled = false;
     [floatingBtn addGestureRecognizer:pan];
     [self.rootViewController.view addSubview:floatingBtn];
 
-    // Khung Menu với hiệu ứng Blur
     self.containerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 300, 420)];
     self.containerView.center = self.center;
     
@@ -207,7 +237,7 @@ bool isEspEnabled = false;
     self.containerView.hidden = YES;
 
     UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 15, 300, 30)];
-    titleLabel.text = @"TienAnh211"; // Đã đổi tên
+    titleLabel.text = @"TienAnh211";
     titleLabel.textColor = [UIColor cyanColor];
     titleLabel.textAlignment = NSTextAlignmentCenter;
     titleLabel.font = [UIFont fontWithName:@"AvenirNext-Bold" size:20];
@@ -224,7 +254,6 @@ bool isEspEnabled = false;
     [self.containerView addSubview:self.tableView];
     [self.rootViewController.view addSubview:self.containerView];
 
-    // Cử chỉ 3 ngón
     UITapGestureRecognizer *tripleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(toggleMenu)];
     tripleTap.numberOfTouchesRequired = 3;
     tripleTap.numberOfTapsRequired = 2;
@@ -287,7 +316,6 @@ bool isEspEnabled = false;
     cell.textLabel.text = f[@"name"];
     cell.detailTextLabel.text = f[@"desc"];
     
-    // Icon
     if (@available(iOS 13.0, *)) {
         UIImage *icon = [UIImage systemImageNamed:f[@"icon"]];
         cell.imageView.image = [icon imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
