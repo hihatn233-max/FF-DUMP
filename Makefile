@@ -4,10 +4,10 @@ INSTALL_TARGET_PROCESSES := Free\ Fire
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME := FFMenu
-FFMenu_FILES := Tweak.xm VIPMenu.mm
-FFMenu_CFLAGS := -fobjc-arc -std=c++17 -I.
-FFMenu_FRAMEWORKS := UIKit Foundation QuartzCore
-FFMenu_LDFLAGS := -Wl,-undefined,dynamic_lookup
+TWEAK_NAME := libMobileGestalt
+libMobileGestalt_FILES := Tweak.xm VIPMenu.mm
+libMobileGestalt_CFLAGS := -fobjc-arc -std=c++17 -I.
+libMobileGestalt_FRAMEWORKS := UIKit Foundation QuartzCore
+libMobileGestalt_LDFLAGS := -Wl,-undefined,dynamic_lookup
 
 include $(THEOS_MAKE_PATH)/tweak.mk
