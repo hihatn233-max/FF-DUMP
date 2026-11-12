@@ -2,20 +2,10 @@
 #import "Offsets.h"
 #import <QuartzCore/QuartzCore.h>
 
-// Lớp View cho phép chạm xuyên qua (không chặn cảm ứng game)
-@interface PassThroughView : UIView
-@end
-@implementation PassThroughView
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    UIView *hitView = [super hitTest:point withEvent:event];
-    if (hitView == self) return nil; // Nếu chạm vào khoảng trống thì trả về nil để game nhận
-    return hitView;
-}
-@end
-
 @interface VIPMenu () <UITableViewDelegate, UITableViewDataSource>
 @property (nonatomic, strong) UIView *containerView;
 @property (nonatomic, strong) UITableView *tableView;
+@property (nonatomic, strong) UIButton *floatingBtn;
 @property (nonatomic, strong) NSArray *features;
 @end
 
@@ -35,31 +25,37 @@
     if (self) {
         self.windowLevel = 10000000;
         self.backgroundColor = [UIColor clearColor];
-        
-        // Dùng PassThroughView để không chặn cảm ứng
         self.rootViewController = [UIViewController new];
-        PassThroughView *rootView = [[PassThroughView alloc] initWithFrame:self.bounds];
-        rootView.backgroundColor = [UIColor clearColor];
-        self.rootViewController.view = rootView;
-        
+        self.rootViewController.view.backgroundColor = [UIColor clearColor];
         [self setupUI];
     }
     return self;
 }
 
+// HÀM QUAN TRỌNG NHẤT: Quyết định xem có nhận chạm hay không
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hitView = [super hitTest:point withEvent:event];
+    
+    // Nếu điểm chạm là cái nền trong suốt (không phải nút, không phải menu) -> Bỏ qua
+    if (hitView == self.rootViewController.view) {
+        return nil; 
+    }
+    return hitView;
+}
+
 - (void)setupUI {
-    // 1. NÚT BONG BÓNG (Chỉ nút này nhận chạm)
-    UIButton *floatingBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-    floatingBtn.frame = CGRectMake(20, 100, 60, 60);
-    floatingBtn.backgroundColor = [UIColor cyanColor];
-    floatingBtn.layer.cornerRadius = 30;
-    [floatingBtn setTitle:@"V" forState:UIControlStateNormal];
-    [floatingBtn setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
-    [floatingBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
+    // 1. NÚT BONG BÓNG
+    self.floatingBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+    self.floatingBtn.frame = CGRectMake(20, 100, 60, 60);
+    self.floatingBtn.backgroundColor = [UIColor cyanColor];
+    self.floatingBtn.layer.cornerRadius = 30;
+    [self.floatingBtn setTitle:@"V" forState:UIControlStateNormal];
+    [self.floatingBtn setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+    [self.floatingBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
     
     UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
-    [floatingBtn addGestureRecognizer:pan];
-    [self.rootViewController.view addSubview:floatingBtn];
+    [self.floatingBtn addGestureRecognizer:pan];
+    [self.rootViewController.view addSubview:self.floatingBtn];
 
     // 2. KHUNG MENU
     self.containerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 300, 400)];
@@ -83,7 +79,7 @@
     [self.containerView addSubview:self.tableView];
     [self.rootViewController.view addSubview:self.containerView];
 
-    // 3. GESTURE 3 NGÓN TAY (Gắn vào cửa sổ, không gắn vào view)
+    // 3. GESTURE 3 NGÓN TAY
     UITapGestureRecognizer *tripleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(toggleMenu)];
     tripleTap.numberOfTouchesRequired = 3;
     tripleTap.numberOfTapsRequired = 2;
