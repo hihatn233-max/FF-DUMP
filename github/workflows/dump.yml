@@ -5,19 +5,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Download and Extract IPA
+        run: |
+          # Tải file IPA (Thay link này bằng link tải IPA của mày)
+          # Mày có thể lấy link từ decrypt.day hoặc apkpure
+          wget -O ff.ipa "https://github.com/username/repo/releases/download/v1/FreeFire.ipa" 
+          unzip ff.ipa -d extracted
+          
       - name: Setup .NET
         uses: actions/setup-dotnet@v3
         with:
           dotnet-version: '6.0.x'
+          
       - name: Download Il2CppDumper
         run: |
           wget https://github.com/Perfare/Il2CppDumper/releases/download/v6.7.46/Il2CppDumper-v6.7.46.zip
           unzip Il2CppDumper-v6.7.46.zip -d dumper
+          
       - name: Run Dump
         run: |
           chmod +x dumper/Il2CppDumper
-          # Chạy dumper với 2 file của mày
-          dumper/Il2CppDumper UnityFramework.bin global-metadata.dat output/
+          dumper/Il2CppDumper "extracted/Payload/Free Fire.app/Frameworks/UnityFramework.framework/UnityFramework" "extracted/Payload/Free Fire.app/Data/Managed/Metadata/global-metadata.dat" output/
+          
       - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
