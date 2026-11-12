@@ -1,37 +1,36 @@
 #import "VIPMenu.h"
 #import "Offsets.h"
 #import <QuartzCore/QuartzCore.h>
+#import <mach/mach.h>
+#import <mach-o/dyld.h>
 #include <cmath>
-#include <mach/mach.h>
-#include <mach-o/dyld.h>
 
 // ==========================================
-// MEMORY READER & TOÁN HỌC
+// 1. HÀM ĐỌC BỘ NHỚ (Không cần thư viện ngoài)
 // ==========================================
 inline uintptr_t getBaseAddress() { return (uintptr_t)_dyld_get_image_header(0); }
 
 template<typename T>
-T readMemory(uintptr_t address) {
+T readMem(uintptr_t address) {
     T data = {};
     vm_size_t size = sizeof(T);
-    kern_return_t kr = vm_read_overwrite(mach_task_self(), (vm_address_t)address, size, (vm_address_t)&data, &size);
-    if (kr != KERN_SUCCESS) return {};
+    vm_read_overwrite(mach_task_self(), (vm_address_t)address, size, (vm_address_t)&data, &size);
     return data;
 }
 
 struct Vector3 {
     float x, y, z;
-    Vector3() : x(0), y(0), z(0) {}
-    Vector3(float _x, float _y, float _z) : x(_x), y(_y), z(_z) {}
     Vector3 operator-(const Vector3& v) const { return Vector3(x - v.x, y - v.y, z - v.z); }
 };
 
-float aimFOV = 15.0f;
+// Biến toàn cục
+float aimFOV = 20.0f;
 float aimSmooth = 0.15f;
 bool isAimEnabled = false;
+bool isEspEnabled = false;
 
 // ==========================================
-// ESP OVERLAY
+// 2. LỚP VẼ ESP (Smooth CADisplayLink)
 // ==========================================
 @interface ESPOverlay : UIView
 @property (nonatomic, strong) CADisplayLink *displayLink;
@@ -62,93 +61,85 @@ bool isAimEnabled = false;
     self.displayLink = nil;
     [self setNeedsDisplay];
 }
-- (void)updateFrame { [self setNeedsDisplay]; }
+- (void)updateFrame { if (isEspEnabled) [self setNeedsDisplay]; }
 
 - (CGPoint)worldToScreen:(float)x y:(float)y z:(float)z {
-    if (!self.viewMatrix) return CGPointMake(-1, -1);
-    float w = self.viewMatrix[12] * x + self.viewMatrix[13] * y + self.viewMatrix[14] * z + self.viewMatrix[15];
+    float *matrix = readMem<float*>(getBaseAddress() + ADDR_VIEW_MATRIX); // Đọc ma trận Camera
+    if (!matrix) return CGPointMake(-1, -1);
+    
+    float w = matrix[12] * x + matrix[13] * y + matrix[14] * z + matrix[15];
     if (w < 0.01f) return CGPointMake(-1, -1);
-    float screenX = (self.viewMatrix[0] * x + self.viewMatrix[1] * y + self.viewMatrix[2] * z + self.viewMatrix[3]) / w;
-    float screenY = (self.viewMatrix[4] * x + self.viewMatrix[5] * y + self.viewMatrix[6] * z + self.viewMatrix[7]) / w;
-    return CGPointMake((self.bounds.size.width / 2.0f) + (self.bounds.size.width / 2.0f) * screenX, 
-                       (self.bounds.size.height / 2.0f) - (self.bounds.size.height / 2.0f) * screenY);
+    
+    float screenX = (matrix[0] * x + matrix[1] * y + matrix[2] * z + matrix[3]) / w;
+    float screenY = (matrix[4] * x + matrix[5] * y + matrix[6] * z + matrix[7]) / w;
+    
+    float width = self.bounds.size.width;
+    float height = self.bounds.size.height;
+    return CGPointMake((width / 2.0f) + (width / 2.0f) * screenX, (height / 2.0f) - (height / 2.0f) * screenY);
 }
 
 - (void)drawRect:(CGRect)rect {
     [super drawRect:rect];
+    if (!isEspEnabled) return;
+    
     CGContextRef ctx = UIGraphicsGetCurrentContext();
     CGContextSetLineWidth(ctx, 1.5);
     CGContextSetStrokeColorWithColor(ctx, [UIColor cyanColor].CGColor);
     
-    NSArray *enemies = [self getEnemyList]; 
+    NSArray *enemies = [self getEnemyList];
     
     for (NSDictionary *enemy in enemies) {
-        float hX = [enemy[@"headX"] floatValue], hY = [enemy[@"headY"] floatValue], hZ = [enemy[@"headZ"] floatValue];
-        float fX = [enemy[@"feetX"] floatValue], fY = [enemy[@"feetY"] floatValue], fZ = [enemy[@"feetZ"] floatValue];
-        NSString *uid = enemy[@"uid"];
-        float hp = [enemy[@"hp"] floatValue];
+        Vector3 head = {[enemy[@"headX"] floatValue], [enemy[@"headY"] floatValue], [enemy[@"headZ"] floatValue]};
+        Vector3 feet = {[enemy[@"feetX"] floatValue], [enemy[@"feetY"] floatValue], [enemy[@"feetZ"] floatValue]};
         
-        CGPoint head = [self worldToScreen:hX y:hY z:hZ];
-        CGPoint feet = [self worldToScreen:fX y:fY z:fZ];
-        if (head.x < 0 || feet.x < 0) continue;
+        CGPoint headScreen = [self worldToScreen:head.x y:head.y z:head.z];
+        CGPoint feetScreen = [self worldToScreen:feet.x y:feet.y z:feet.z];
+        if (headScreen.x < 0 || feetScreen.x < 0) continue;
 
-        NSValue *lastHeadVal = self.lastPositions[uid];
-        if (lastHeadVal) {
-            CGPoint lastHead = [lastHeadVal CGPointValue];
-            head.x = lastHead.x + (head.x - lastHead.x) * 0.35f;
-            head.y = lastHead.y + (head.y - lastHead.y) * 0.35f;
+        // Làm mượt
+        NSString *uid = enemy[@"uid"];
+        NSValue *lastVal = self.lastPositions[uid];
+        if (lastVal) {
+            CGPoint lh = [lastVal CGPointValue];
+            headScreen.x = lh.x + (headScreen.x - lh.x) * 0.35f;
+            headScreen.y = lh.y + (headScreen.y - lh.y) * 0.35f;
         }
-        self.lastPositions[uid] = [NSValue valueWithCGPoint:head];
+        self.lastPositions[uid] = [NSValue valueWithCGPoint:headScreen];
 
-        float boxHeight = feet.y - head.y;
+        float boxHeight = feetScreen.y - headScreen.y;
         if (boxHeight < 5) continue;
         float boxWidth = boxHeight * 0.45f;
-        CGRect boxRect = CGRectMake(head.x - boxWidth/2, head.y, boxWidth, boxHeight);
+        CGRect boxRect = CGRectMake(headScreen.x - boxWidth/2, headScreen.y, boxWidth, boxHeight);
         
+        // Vẽ Box & Line
         CGContextStrokeRect(ctx, boxRect);
-        
-        CGContextSetStrokeColorWithColor(ctx, [UIColor redColor].CGColor);
-        CGContextSetLineWidth(ctx, 2.0);
-        float hpHeight = boxHeight * (hp / 100.0f);
-        CGContextMoveToPoint(ctx, boxRect.origin.x - 5, boxRect.origin.y + boxHeight);
-        CGContextAddLineToPoint(ctx, boxRect.origin.x - 5, boxRect.origin.y + boxHeight - hpHeight);
-        CGContextStrokePath(ctx);
-        
-        CGContextSetStrokeColorWithColor(ctx, [UIColor cyanColor].CGColor);
-        CGContextSetLineWidth(ctx, 1.0);
         CGContextMoveToPoint(ctx, self.bounds.size.width / 2, self.bounds.size.height);
-        CGContextAddLineToPoint(ctx, head.x, head.y);
+        CGContextAddLineToPoint(ctx, headScreen.x, headScreen.y);
         CGContextStrokePath(ctx);
     }
 }
 
 - (NSArray *)getEnemyList {
     NSMutableArray *enemies = [NSMutableArray array];
-    uintptr_t base = getBaseAddress(); 
-    if (!base) return enemies;
-
-    uintptr_t entityList = base + ADDR_ENTITY_LIST;
-    uintptr_t localPlayer = readMemory<uintptr_t>(base + ADDR_LOCAL_PLAYER);
-    if (!localPlayer) return enemies;
-
-    int myTeam = readMemory<int>(localPlayer + OFF_PLAYER_TEAM);
+    uintptr_t base = getBaseAddress();
+    uintptr_t entityList = readMem<uintptr_t>(base + ADDR_ENTITY_LIST);
+    if (!entityList) return enemies;
 
     for (int i = 0; i < 50; i++) {
-        uintptr_t player = readMemory<uintptr_t>(entityList + (i * 0x8)); 
-        if (!player || player == localPlayer) continue;
+        uintptr_t player = readMem<uintptr_t>(entityList + (i * 0x8));
+        if (!player) continue;
 
-        int team = readMemory<int>(player + OFF_PLAYER_TEAM);
-        float hp = readMemory<float>(player + OFF_PLAYER_HP);
+        float hp = readMem<float>(player + OFF_PLAYER_HP);
+        int team = readMem<int>(player + OFF_PLAYER_TEAM);
 
-        if (hp > 0 && hp <= 200 && team != myTeam) {
-            Vector3 head = readMemory<Vector3>(player + OFF_PLAYER_HEAD);
-            Vector3 feet = readMemory<Vector3>(player + OFF_PLAYER_POS);
+        if (hp > 0 && hp <= 200 && team != 1) { // team 1 là đồng đội
+            Vector3 head = readMem<Vector3>(player + OFF_PLAYER_HEAD);
+            Vector3 feet = readMem<Vector3>(player + OFF_PLAYER_POS);
             
             [enemies addObject:@{
                 @"headX": @(head.x), @"headY": @(head.y), @"headZ": @(head.z),
                 @"feetX": @(feet.x), @"feetY": @(feet.y), @"feetZ": @(feet.z),
-                @"hp": @(hp),
-                @"uid": [NSString stringWithFormat:@"%lu", (unsigned long)player]
+                @"uid": [NSString stringWithFormat:@"%d", i]
             }];
         }
     }
@@ -157,14 +148,13 @@ bool isAimEnabled = false;
 @end
 
 // ==========================================
-// VIP MENU CLASS
+// 3. LỚP MENU (VIPMenu)
 // ==========================================
 @interface VIPMenu () <UITableViewDelegate, UITableViewDataSource>
 @property (nonatomic, strong) UIView *containerView;
 @property (nonatomic, strong) UITableView *tableView;
-@property (nonatomic, strong) UIButton *floatingBtn;
-@property (nonatomic, strong) NSArray *features;
 @property (nonatomic, strong) ESPOverlay *espOverlay;
+@property (nonatomic, strong) NSArray *features;
 @end
 
 @implementation VIPMenu
@@ -184,7 +174,6 @@ bool isAimEnabled = false;
         self.windowLevel = 10000000;
         self.backgroundColor = [UIColor clearColor];
         self.rootViewController = [UIViewController new];
-        self.rootViewController.view.backgroundColor = [UIColor clearColor];
         [self setupUI];
     }
     return self;
@@ -197,17 +186,17 @@ bool isAimEnabled = false;
 }
 
 - (void)setupUI {
-    self.floatingBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-    self.floatingBtn.frame = CGRectMake(20, 100, 60, 60);
-    self.floatingBtn.backgroundColor = [UIColor cyanColor];
-    self.floatingBtn.layer.cornerRadius = 30;
-    [self.floatingBtn setTitle:@"V" forState:UIControlStateNormal];
-    [self.floatingBtn setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
-    [self.floatingBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
+    UIButton *floatingBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+    floatingBtn.frame = CGRectMake(20, 100, 60, 60);
+    floatingBtn.backgroundColor = [UIColor cyanColor];
+    floatingBtn.layer.cornerRadius = 30;
+    [floatingBtn setTitle:@"V" forState:UIControlStateNormal];
+    [floatingBtn setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+    [floatingBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
     
     UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
-    [self.floatingBtn addGestureRecognizer:pan];
-    [self.rootViewController.view addSubview:self.floatingBtn];
+    [floatingBtn addGestureRecognizer:pan];
+    [self.rootViewController.view addSubview:floatingBtn];
 
     self.containerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 300, 400)];
     self.containerView.center = self.center;
@@ -217,13 +206,7 @@ bool isAimEnabled = false;
     self.containerView.layer.borderWidth = 1.5;
     self.containerView.hidden = YES;
 
-    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 0, 260, 50)];
-    titleLabel.text = @"TIENANH VIP (OB55)";
-    titleLabel.textColor = [UIColor cyanColor];
-    titleLabel.font = [UIFont boldSystemFontOfSize:16];
-    [self.containerView addSubview:titleLabel];
-
-    self.tableView = [[UITableView alloc] initWithFrame:CGRectMake(0, 50, 300, 350) style:UITableViewStyleInsetGrouped];
+    self.tableView = [[UITableView alloc] initWithFrame:CGRectMake(0, 0, 300, 400) style:UITableViewStyleInsetGrouped];
     self.tableView.backgroundColor = [UIColor clearColor];
     self.tableView.delegate = self;
     self.tableView.dataSource = self;
@@ -236,33 +219,17 @@ bool isAimEnabled = false;
     [self addGestureRecognizer:tripleTap];
 
     self.espOverlay = [[ESPOverlay alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    [self.rootViewController.view addSubview:self.espOverlay];
+    [self.rootViewController.view insertSubview:self.espOverlay atIndex:0];
 
     self.features = @[
-        @{@"name": @"Enable Aim", @"desc": @"Humanized Smooth", @"type": @"toggle_aim"},
-        @{@"name": @"ESP Box", @"desc": @"Vẽ Box & Health", @"type": @"toggle_esp"},
-        @{@"name": @"FOV (Độ rộng)", @"desc": @"Chỉ bám khi địch ở gần", @"type": @"slider_fov"},
-        @{@"name": @"Smooth (Độ mượt)", @"desc": @"Càng cao càng giống người", @"type": @"slider_smooth"}
+        @{@"name": @"ESP VIP", @"desc": @"Box, Line", @"type": @"esp"},
+        @{@"name": @"FOV", @"desc": @"Độ rộng góc ngắm", @"type": @"slider_fov"},
+        @{@"name": @"Smooth", @"desc": @"Độ mượt của tâm", @"type": @"slider_smooth"}
     ];
 }
 
 - (void)toggleMenu {
-    if (self.containerView.hidden) {
-        self.containerView.hidden = NO;
-        self.containerView.alpha = 0;
-        self.containerView.transform = CGAffineTransformMakeScale(0.9, 0.9);
-        [UIView animateWithDuration:0.2 animations:^{
-            self.containerView.alpha = 1;
-            self.containerView.transform = CGAffineTransformIdentity;
-        }];
-    } else {
-        [UIView animateWithDuration:0.2 animations:^{
-            self.containerView.alpha = 0;
-            self.containerView.transform = CGAffineTransformMakeScale(0.9, 0.9);
-        } completion:^(BOOL finished) {
-            self.containerView.hidden = YES;
-        }];
-    }
+    self.containerView.hidden = !self.containerView.hidden;
 }
 
 - (void)handlePan:(UIPanGestureRecognizer *)pan {
@@ -271,58 +238,41 @@ bool isAimEnabled = false;
     [pan setTranslation:CGPointZero inView:self];
 }
 
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return self.features.count;
-}
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return self.features.count; }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"VIPCell"];
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"cell"];
     if (!cell) {
-        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"VIPCell"];
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"cell"];
         cell.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.05];
         cell.textLabel.textColor = [UIColor whiteColor];
         cell.detailTextLabel.textColor = [UIColor lightGrayColor];
-        cell.selectionStyle = UITableViewCellSelectionStyleNone;
     }
-    NSDictionary *feature = self.features[indexPath.row];
-    cell.textLabel.text = feature[@"name"];
-    cell.detailTextLabel.text = feature[@"desc"];
+    NSDictionary *f = self.features[indexPath.row];
+    cell.textLabel.text = f[@"name"];
+    cell.detailTextLabel.text = f[@"desc"];
     
-    NSString *type = feature[@"type"];
-    if ([type hasPrefix:@"toggle"]) {
-        UISwitch *toggle = [[UISwitch alloc] initWithFrame:CGRectZero];
-        toggle.onTintColor = [UIColor cyanColor];
-        [toggle addTarget:self action:@selector(switchChanged:) forControlEvents:UIControlEventValueChanged];
-        toggle.tag = indexPath.row;
-        cell.accessoryView = toggle;
-    } else if ([type hasPrefix:@"slider"]) {
-        UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0, 0, 120, 30)];
-        slider.minimumTrackTintColor = [UIColor cyanColor];
-        slider.maximumTrackTintColor = [UIColor darkGrayColor];
-        slider.tag = indexPath.row;
-        if ([type isEqualToString:@"slider_fov"]) {
-            slider.minimumValue = 5.0f; slider.maximumValue = 90.0f; slider.value = aimFOV;
-        } else {
-            slider.minimumValue = 0.05f; slider.maximumValue = 0.8f; slider.value = aimSmooth;
-        }
-        [slider addTarget:self action:@selector(sliderChanged:) forControlEvents:UIControlEventValueChanged];
-        cell.accessoryView = slider;
+    if ([f[@"type"] isEqualToString:@"esp"]) {
+        UISwitch *sw = [[UISwitch alloc] init];
+        sw.onTintColor = [UIColor cyanColor];
+        [sw addTarget:self action:@selector(espToggled:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = sw;
+    } else {
+        UISlider *sl = [[UISlider alloc] initWithFrame:CGRectMake(0, 0, 120, 30)];
+        sl.minimumTrackTintColor = [UIColor cyanColor];
+        sl.tag = indexPath.row;
+        [sl addTarget:self action:@selector(sliderMoved:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = sl;
     }
     return cell;
 }
 
-- (void)switchChanged:(UISwitch *)sender {
-    NSString *type = self.features[sender.tag][@"type"];
-    if ([type isEqualToString:@"toggle_aim"]) isAimEnabled = sender.isOn;
-    else if ([type isEqualToString:@"toggle_esp"]) {
-        if (sender.isOn) [self.espOverlay start];
-        else [self.espOverlay stop];
-    }
+- (void)espToggled:(UISwitch *)sw {
+    isEspEnabled = sw.isOn;
+    if (isEspEnabled) [self.espOverlay start]; else [self.espOverlay stop];
 }
 
-- (void)sliderChanged:(UISlider *)sender {
-    NSString *type = self.features[sender.tag][@"type"];
-    if ([type isEqualToString:@"slider_fov"]) aimFOV = sender.value;
-    else if ([type isEqualToString:@"slider_smooth"]) aimSmooth = sender.value;
+- (void)sliderMoved:(UISlider *)sl {
+    if (sl.tag == 1) aimFOV = sl.value; else aimSmooth = sl.value;
 }
 @end
