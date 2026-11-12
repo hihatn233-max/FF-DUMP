@@ -1,8 +1,23 @@
 #pragma once
 #include <cmath>
 #include <cstdint>
-#import "Offsets.h"
-#import "KittyMemory/MemoryPatch.hpp"
+#include <mach/mach.h>
+#include <mach-o/dyld.h>
+
+// Hàm lấy địa chỉ gốc của game
+inline uintptr_t getBaseAddress() {
+    return (uintptr_t)_dyld_get_image_header(0); 
+}
+
+// Hàm đọc bộ nhớ thuần C++
+template<typename T>
+T readMemory(uintptr_t address) {
+    T data = {};
+    vm_size_t size = sizeof(T);
+    kern_return_t kr = vm_read_overwrite(mach_task_self(), (vm_address_t)address, size, (vm_address_t)&data, &size);
+    if (kr != KERN_SUCCESS) return {};
+    return data;
+}
 
 // Cấu trúc Vector 3 chiều
 struct Vector3 {
@@ -21,26 +36,26 @@ inline void CalcAngle(Vector3 src, Vector3 dst, float &yaw, float &pitch) {
     pitch = atan2(delta.y, hyp) * 180.0f / M_PI;
 }
 
+extern float aimFOV;
+extern float aimSmooth;
+extern bool isAimEnabled;
+
 // Hàm Can thiệp vào Camera (Cần hook vào hàm xoay Camera của game)
 inline void ApplyHumanizedAim(float targetYaw, float targetPitch, float currentYaw, float currentPitch, float dt) {
     if (!isAimEnabled) return;
 
-    // 1. Check FOV (Địch có nằm trong vòng ngắm không)
     float deltaYaw = targetYaw - currentYaw;
     float deltaPitch = targetPitch - currentPitch;
     
-    // Nếu góc lệch lớn hơn FOV thì bỏ qua (không bám)
     if (abs(deltaYaw) > (aimFOV / 2.0f) || abs(deltaPitch) > (aimFOV / 2.0f)) return;
 
-    // 2. Humanized Smooth (Nội suy tuyến tính)
-    // Tốc độ xoay = Khoảng cách * Hệ số Smooth * DeltaTime
-    float smoothFactor = aimSmooth * dt * 60.0f; // 60fps base
+    float smoothFactor = aimSmooth * dt * 60.0f;
     if (smoothFactor > 1.0f) smoothFactor = 1.0f;
 
     float newYaw = currentYaw + (deltaYaw * smoothFactor);
     float newPitch = currentPitch + (deltaPitch * smoothFactor);
 
-    // Ghi đè góc xoay mới vào game (Cần hàm write của KittyMemory)
-    // KittyMemory::write<float>(cameraAddr + 0xYawOffset, newYaw);
-    // KittyMemory::write<float>(cameraAddr + 0xPitchOffset, newPitch);
+    // Ghi đè góc xoay mới vào game (Mày phải tự viết hàm writeMemory nếu cần)
+    // writeMemory<float>(cameraAddr + 0xYawOffset, newYaw);
+    // writeMemory<float>(cameraAddr + 0xPitchOffset, newPitch);
 }
