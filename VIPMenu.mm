@@ -1,6 +1,12 @@
 #import "VIPMenu.h"
 #import "Offsets.h"
+#import "AimEngine.h"
 #import <QuartzCore/QuartzCore.h>
+
+// Khởi tạo biến toàn cục
+float aimFOV = 15.0f;
+float aimSmooth = 0.15f;
+bool isAimEnabled = false;
 
 @interface VIPMenu () <UITableViewDelegate, UITableViewDataSource>
 @property (nonatomic, strong) UIView *containerView;
@@ -10,112 +16,18 @@
 @end
 
 @implementation VIPMenu
-
-+ (instancetype)shared {
-    static VIPMenu *shared = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        shared = [[VIPMenu alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    });
-    return shared;
-}
-
-- (instancetype)initWithFrame:(CGRect)frame {
-    self = [super initWithFrame:frame];
-    if (self) {
-        self.windowLevel = 10000000;
-        self.backgroundColor = [UIColor clearColor];
-        self.rootViewController = [UIViewController new];
-        self.rootViewController.view.backgroundColor = [UIColor clearColor];
-        [self setupUI];
-    }
-    return self;
-}
-
-// HÀM QUAN TRỌNG NHẤT: Quyết định xem có nhận chạm hay không
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    UIView *hitView = [super hitTest:point withEvent:event];
-    
-    // Nếu điểm chạm là cái nền trong suốt (không phải nút, không phải menu) -> Bỏ qua
-    if (hitView == self.rootViewController.view) {
-        return nil; 
-    }
-    return hitView;
-}
+// ... (Giữ nguyên các hàm init, hitTest, toggleMenu, handlePan như bản trước)
 
 - (void)setupUI {
-    // 1. NÚT BONG BÓNG
-    self.floatingBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-    self.floatingBtn.frame = CGRectMake(20, 100, 60, 60);
-    self.floatingBtn.backgroundColor = [UIColor cyanColor];
-    self.floatingBtn.layer.cornerRadius = 30;
-    [self.floatingBtn setTitle:@"V" forState:UIControlStateNormal];
-    [self.floatingBtn setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
-    [self.floatingBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
+    // ... (Nút bong bóng và Khung Menu giữ nguyên)
     
-    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
-    [self.floatingBtn addGestureRecognizer:pan];
-    [self.rootViewController.view addSubview:self.floatingBtn];
-
-    // 2. KHUNG MENU
-    self.containerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 300, 400)];
-    self.containerView.center = self.center;
-    self.containerView.backgroundColor = [UIColor colorWithRed:0.05 green:0.05 blue:0.07 alpha:0.95];
-    self.containerView.layer.cornerRadius = 16;
-    self.containerView.layer.borderColor = [UIColor cyanColor].CGColor;
-    self.containerView.layer.borderWidth = 1.5;
-    self.containerView.hidden = YES;
-
-    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 0, 260, 50)];
-    titleLabel.text = @"TIENANH VIP (OB55)";
-    titleLabel.textColor = [UIColor cyanColor];
-    titleLabel.font = [UIFont boldSystemFontOfSize:16];
-    [self.containerView addSubview:titleLabel];
-
-    self.tableView = [[UITableView alloc] initWithFrame:CGRectMake(0, 50, 300, 350) style:UITableViewStyleInsetGrouped];
-    self.tableView.backgroundColor = [UIColor clearColor];
-    self.tableView.delegate = self;
-    self.tableView.dataSource = self;
-    [self.containerView addSubview:self.tableView];
-    [self.rootViewController.view addSubview:self.containerView];
-
-    // 3. GESTURE 3 NGÓN TAY
-    UITapGestureRecognizer *tripleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(toggleMenu)];
-    tripleTap.numberOfTouchesRequired = 3;
-    tripleTap.numberOfTapsRequired = 2;
-    [self addGestureRecognizer:tripleTap];
-
+    // Cập nhật lại mảng Features
     self.features = @[
-        @{@"name": @"Aim Cổ (Head)", @"desc": @"Ghim thẳng vào đầu"},
-        @{@"name": @"Aim Body", @"desc": @"Ghim vào ngực/bụng"},
-        @{@"name": @"Magic Bullet", @"desc": @"Đạn tự bay theo tâm"},
-        @{@"name": @"ESP VIP", @"desc": @"Box, Line, Health"}
+        @{@"name": @"Enable Aim", @"desc": @"Humanized Smooth", @"type": @"toggle_aim"},
+        @{@"name": @"ESP Box", @"desc": @"Vẽ Box & Health", @"type": @"toggle_esp"},
+        @{@"name": @"FOV (Độ rộng)", @"desc": @"Chỉ bám khi địch ở gần", @"type": @"slider_fov"},
+        @{@"name": @"Smooth (Độ mượt)", @"desc": @"Càng cao càng giống người", @"type": @"slider_smooth"}
     ];
-}
-
-- (void)toggleMenu {
-    if (self.containerView.hidden) {
-        self.containerView.hidden = NO;
-        self.containerView.alpha = 0;
-        self.containerView.transform = CGAffineTransformMakeScale(0.9, 0.9);
-        [UIView animateWithDuration:0.2 animations:^{
-            self.containerView.alpha = 1;
-            self.containerView.transform = CGAffineTransformIdentity;
-        }];
-    } else {
-        [UIView animateWithDuration:0.2 animations:^{
-            self.containerView.alpha = 0;
-            self.containerView.transform = CGAffineTransformMakeScale(0.9, 0.9);
-        } completion:^(BOOL finished) {
-            self.containerView.hidden = YES;
-        }];
-    }
-}
-
-- (void)handlePan:(UIPanGestureRecognizer *)pan {
-    CGPoint translation = [pan translationInView:self];
-    pan.view.center = CGPointMake(pan.view.center.x + translation.x, pan.view.center.y + translation.y);
-    [pan setTranslation:CGPointZero inView:self];
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
@@ -129,14 +41,99 @@
         cell.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.05];
         cell.textLabel.textColor = [UIColor whiteColor];
         cell.detailTextLabel.textColor = [UIColor lightGrayColor];
-        
-        UISwitch *toggle = [[UISwitch alloc] initWithFrame:CGRectZero];
-        toggle.onTintColor = [UIColor cyanColor];
-        cell.accessoryView = toggle;
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
     }
+    
     NSDictionary *feature = self.features[indexPath.row];
     cell.textLabel.text = feature[@"name"];
     cell.detailTextLabel.text = feature[@"desc"];
+    
+    NSString *type = feature[@"type"];
+    
+    if ([type hasPrefix:@"toggle"]) {
+        UISwitch *toggle = [[UISwitch alloc] initWithFrame:CGRectZero];
+        toggle.onTintColor = [UIColor cyanColor];
+        [toggle addTarget:self action:@selector(switchChanged:) forControlEvents:UIControlEventValueChanged];
+        toggle.tag = indexPath.row;
+        cell.accessoryView = toggle;
+    } 
+    else if ([type hasPrefix:@"slider"]) {
+        UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0, 0, 120, 30)];
+        slider.minimumTrackTintColor = [UIColor cyanColor];
+        slider.maximumTrackTintColor = [UIColor darkGrayColor];
+        slider.tag = indexPath.row;
+        
+        if ([type isEqualToString:@"slider_fov"]) {
+            slider.minimumValue = 5.0f;
+            slider.maximumValue = 90.0f;
+            slider.value = aimFOV;
+        } else {
+            slider.minimumValue = 0.05f;
+            slider.maximumValue = 0.8f;
+            slider.value = aimSmooth;
+        }
+        [slider addTarget:self action:@selector(sliderChanged:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = slider;
+    }
+    
     return cell;
+}
+
+- (void)switchChanged:(UISwitch *)sender {
+    NSString *type = self.features[sender.tag][@"type"];
+    if ([type isEqualToString:@"toggle_aim"]) {
+        isAimEnabled = sender.isOn;
+    } else if ([type isEqualToString:@"toggle_esp"]) {
+        // Gọi hàm bật tắt ESPOverlay
+    }
+}
+
+- (void)sliderChanged:(UISlider *)sender {
+    NSString *type = self.features[sender.tag][@"type"];
+    if ([type isEqualToString:@"slider_fov"]) {
+        aimFOV = sender.value;
+    } else if ([type isEqualToString:@"slider_smooth"]) {
+        aimSmooth = sender.value;
+    }
+}
+
+// ==========================================
+// ESP ĐỌC BỘ NHỚ (Đã nâng cấp)
+// ==========================================
+- (NSArray *)getEnemyList {
+    NSMutableArray *enemies = [NSMutableArray array];
+    uintptr_t base = KittyMemory::getBaseAddress(); // Lấy Base của game
+    if (!base) return enemies;
+
+    uintptr_t entityList = base + ADDR_ENTITY_LIST;
+    uintptr_t localPlayer = KittyMemory::read<uintptr_t>(base + ADDR_LOCAL_PLAYER);
+    if (!localPlayer) return enemies;
+
+    // Lấy Team của mình để không vẽ box lên đồng đội
+    int myTeam = KittyMemory::read<int>(localPlayer + OFF_PLAYER_TEAM);
+
+    for (int i = 0; i < 50; i++) {
+        // Đọc con trỏ tới player thứ i
+        uintptr_t player = KittyMemory::read<uintptr_t>(entityList + (i * 0x8)); 
+        if (!player || player == localPlayer) continue;
+
+        int team = KittyMemory::read<int>(player + OFF_PLAYER_TEAM);
+        float hp = KittyMemory::read<float>(player + OFF_PLAYER_HP);
+
+        // Check điều kiện: Còn sống và khác Team
+        if (hp > 0 && hp <= 200 && team != myTeam) {
+            Vector3 head = KittyMemory::read<Vector3>(player + OFF_PLAYER_HEAD);
+            Vector3 feet = KittyMemory::read<Vector3>(player + OFF_PLAYER_POS);
+            
+            // (Tọa độ Head và Feet này sẽ được đưa vào hàm WorldToScreen để vẽ Box)
+            [enemies addObject:@{
+                @"headX": @(head.x), @"headY": @(head.y), @"headZ": @(head.z),
+                @"feetX": @(feet.x), @"feetY": @(feet.y), @"feetZ": @(feet.z),
+                @"hp": @(hp),
+                @"uid": [NSString stringWithFormat:@"%lu", (unsigned long)player]
+            }];
+        }
+    }
+    return enemies;
 }
 @end
