@@ -1,6 +1,5 @@
 #pragma once
 #include <stdint.h>
-#include <string>
 #include <dlfcn.h>
 
 typedef void* (*il2cpp_domain_get_t)(void);
@@ -41,9 +40,8 @@ inline void* get_method_address(const char* className, const char* methodName) {
     for (size_t i = 0; i < count; i++) {
         void* image = api.assembly_get_image(assemblies[i]);
         void* klass = api.class_from_name(image, "", className);
-        if (!klass) klass = api.class_from_name(image, "Game.Combat", className);
-        if (!klass) klass = api.class_from_name(image, "Game.Player", className);
-
+        if (!klass) klass = api.class_from_name(image, "Assembly-CSharp", className);
+        
         if (klass) {
             void* method = api.class_get_method_from_name(klass, methodName, -1);
             if (method) return api.method_get_pointer(method);
