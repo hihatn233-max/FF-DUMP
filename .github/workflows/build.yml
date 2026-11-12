@@ -11,19 +11,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Setup Theos
+      - name: Setup Theos & SDK
         run: |
           brew install ldid xz make
-          git clone --recursive https://github.com/theos/theos.git $HOME/theos
-          
-      - name: Download SDK
-        run: |
           export THEOS=$HOME/theos
+          git clone --recursive https://github.com/theos/theos.git $THEOS
           rm -rf $THEOS/sdks
-          mkdir -p $THEOS/sdks
-          wget -q https://github.com/theos/sdks/archive/master.zip
-          unzip -q master.zip
-          cp -r sdks-master/*.sdk $THEOS/sdks/
+          git clone https://github.com/theos/sdks.git $THEOS/sdks
           
       - name: Build Tweak
         run: |
