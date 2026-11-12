@@ -26,6 +26,7 @@ jobs:
       - name: Build Tweak
         run: |
           export THEOS=$HOME/theos
+          export LD_SHARED_CACHE_ELIGIBLE=NO
           make clean
           make
           
