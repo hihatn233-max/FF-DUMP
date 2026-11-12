@@ -6,13 +6,11 @@ include $(THEOS)/makefiles/common.mk
 
 LIBRARY_NAME := FFMenu
 FFMenu_FILES := Tweak.xm VIPMenu.mm
-FFMenu_CFLAGS := -fobjc-arc -std=c++17 -I. -DNDEBUG
+FFMenu_CFLAGS := -fobjc-arc -std=c++17 -I.
 FFMenu_FRAMEWORKS := UIKit Foundation QuartzCore
-FFMenu_LIBRARIES := substrate
 FFMenu_INSTALL_PATH := /usr/lib
 
-# Vá lỗi linker của macOS
-FFMenu_LDFLAGS := -Wl,-not_for_dylib_shared_cache
-FFMenu_CCFLAGS := -fno-modules
+# Dòng quan trọng nhất: Dùng dynamic_lookup thay vì link substrate
+FFMenu_LDFLAGS := -Wl,-undefined,dynamic_lookup
 
 include $(THEOS_MAKE_PATH)/library.mk
