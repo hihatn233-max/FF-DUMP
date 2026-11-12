@@ -1,0 +1,25 @@
+name: Il2Cpp Dump
+on: [push, workflow_dispatch]
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '6.0.x'
+      - name: Download Il2CppDumper
+        run: |
+          wget https://github.com/Perfare/Il2CppDumper/releases/download/v6.7.46/Il2CppDumper-v6.7.46.zip
+          unzip Il2CppDumper-v6.7.46.zip -d dumper
+      - name: Run Dump
+        run: |
+          chmod +x dumper/Il2CppDumper
+          # Chạy dumper với 2 file của mày
+          dumper/Il2CppDumper UnityFramework.bin global-metadata.dat output/
+      - name: Upload Result
+        uses: actions/upload-artifact@v4
+        with:
+          name: dump-result
+          path: output/
