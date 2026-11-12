@@ -6,7 +6,7 @@
 #include <cmath>
 
 // ==========================================
-// 1. HÀM ĐỌC BỘ NHỚ (Không cần thư viện ngoài)
+// 1. HÀM ĐỌC BỘ NHỚ
 // ==========================================
 inline uintptr_t getBaseAddress() { return (uintptr_t)_dyld_get_image_header(0); }
 
@@ -20,6 +20,8 @@ T readMem(uintptr_t address) {
 
 struct Vector3 {
     float x, y, z;
+    Vector3() : x(0), y(0), z(0) {}
+    Vector3(float _x, float _y, float _z) : x(_x), y(_y), z(_z) {}
     Vector3 operator-(const Vector3& v) const { return Vector3(x - v.x, y - v.y, z - v.z); }
 };
 
@@ -30,12 +32,11 @@ bool isAimEnabled = false;
 bool isEspEnabled = false;
 
 // ==========================================
-// 2. LỚP VẼ ESP (Smooth CADisplayLink)
+// 2. LỚP VẼ ESP
 // ==========================================
 @interface ESPOverlay : UIView
 @property (nonatomic, strong) CADisplayLink *displayLink;
 @property (nonatomic, strong) NSMutableDictionary<NSString*, NSValue*> *lastPositions;
-@property (nonatomic, assign) float *viewMatrix;
 - (void)start;
 - (void)stop;
 @end
@@ -64,7 +65,7 @@ bool isEspEnabled = false;
 - (void)updateFrame { if (isEspEnabled) [self setNeedsDisplay]; }
 
 - (CGPoint)worldToScreen:(float)x y:(float)y z:(float)z {
-    float *matrix = readMem<float*>(getBaseAddress() + ADDR_VIEW_MATRIX); // Đọc ma trận Camera
+    float *matrix = readMem<float*>(getBaseAddress() + ADDR_VIEW_MATRIX);
     if (!matrix) return CGPointMake(-1, -1);
     
     float w = matrix[12] * x + matrix[13] * y + matrix[14] * z + matrix[15];
@@ -89,14 +90,13 @@ bool isEspEnabled = false;
     NSArray *enemies = [self getEnemyList];
     
     for (NSDictionary *enemy in enemies) {
-        Vector3 head = {[enemy[@"headX"] floatValue], [enemy[@"headY"] floatValue], [enemy[@"headZ"] floatValue]};
-        Vector3 feet = {[enemy[@"feetX"] floatValue], [enemy[@"feetY"] floatValue], [enemy[@"feetZ"] floatValue]};
+        float hX = [enemy[@"headX"] floatValue], hY = [enemy[@"headY"] floatValue], hZ = [enemy[@"headZ"] floatValue];
+        float fX = [enemy[@"feetX"] floatValue], fY = [enemy[@"feetY"] floatValue], fZ = [enemy[@"feetZ"] floatValue];
         
-        CGPoint headScreen = [self worldToScreen:head.x y:head.y z:head.z];
-        CGPoint feetScreen = [self worldToScreen:feet.x y:feet.y z:feet.z];
+        CGPoint headScreen = [self worldToScreen:hX y:hY z:hZ];
+        CGPoint feetScreen = [self worldToScreen:fX y:fY z:fZ];
         if (headScreen.x < 0 || feetScreen.x < 0) continue;
 
-        // Làm mượt
         NSString *uid = enemy[@"uid"];
         NSValue *lastVal = self.lastPositions[uid];
         if (lastVal) {
@@ -111,7 +111,6 @@ bool isEspEnabled = false;
         float boxWidth = boxHeight * 0.45f;
         CGRect boxRect = CGRectMake(headScreen.x - boxWidth/2, headScreen.y, boxWidth, boxHeight);
         
-        // Vẽ Box & Line
         CGContextStrokeRect(ctx, boxRect);
         CGContextMoveToPoint(ctx, self.bounds.size.width / 2, self.bounds.size.height);
         CGContextAddLineToPoint(ctx, headScreen.x, headScreen.y);
@@ -132,7 +131,7 @@ bool isEspEnabled = false;
         float hp = readMem<float>(player + OFF_PLAYER_HP);
         int team = readMem<int>(player + OFF_PLAYER_TEAM);
 
-        if (hp > 0 && hp <= 200 && team != 1) { // team 1 là đồng đội
+        if (hp > 0 && hp <= 200 && team != 1) {
             Vector3 head = readMem<Vector3>(player + OFF_PLAYER_HEAD);
             Vector3 feet = readMem<Vector3>(player + OFF_PLAYER_POS);
             
@@ -148,7 +147,7 @@ bool isEspEnabled = false;
 @end
 
 // ==========================================
-// 3. LỚP MENU (VIPMenu)
+// 3. LỚP MENU (VIPMenu) - CÓ ICON XE KART
 // ==========================================
 @interface VIPMenu () <UITableViewDelegate, UITableViewDataSource>
 @property (nonatomic, strong) UIView *containerView;
@@ -186,12 +185,29 @@ bool isEspEnabled = false;
 }
 
 - (void)setupUI {
+    // NÚT ICON XE KART
     UIButton *floatingBtn = [UIButton buttonWithType:UIButtonTypeCustom];
     floatingBtn.frame = CGRectMake(20, 100, 60, 60);
-    floatingBtn.backgroundColor = [UIColor cyanColor];
-    floatingBtn.layer.cornerRadius = 30;
-    [floatingBtn setTitle:@"V" forState:UIControlStateNormal];
-    [floatingBtn setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+    
+    // Tải ảnh từ đường dẫn cài đặt
+    NSString *iconPath = @"/Library/Application Support/FFMenu/kart_icon.png";
+    UIImage *kartImg = [UIImage imageWithContentsOfFile:iconPath];
+    
+    if (kartImg) {
+        [floatingBtn setImage:kartImg forState:UIControlStateNormal];
+        floatingBtn.imageView.contentMode = UIViewContentModeScaleAspectFill;
+        floatingBtn.layer.cornerRadius = 30;
+        floatingBtn.clipsToBounds = YES;
+    } else {
+        // Fallback nếu không tìm thấy ảnh
+        [floatingBtn setTitle:@"V" forState:UIControlStateNormal];
+        [floatingBtn setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+        floatingBtn.backgroundColor = [UIColor cyanColor];
+        floatingBtn.layer.cornerRadius = 30;
+    }
+    
+    floatingBtn.layer.borderColor = [UIColor cyanColor].CGColor;
+    floatingBtn.layer.borderWidth = 2.0;
     [floatingBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
     
     UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
@@ -228,9 +244,7 @@ bool isEspEnabled = false;
     ];
 }
 
-- (void)toggleMenu {
-    self.containerView.hidden = !self.containerView.hidden;
-}
+- (void)toggleMenu { self.containerView.hidden = !self.containerView.hidden; }
 
 - (void)handlePan:(UIPanGestureRecognizer *)pan {
     CGPoint translation = [pan translationInView:self];
@@ -247,6 +261,7 @@ bool isEspEnabled = false;
         cell.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.05];
         cell.textLabel.textColor = [UIColor whiteColor];
         cell.detailTextLabel.textColor = [UIColor lightGrayColor];
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
     }
     NSDictionary *f = self.features[indexPath.row];
     cell.textLabel.text = f[@"name"];
