@@ -34,6 +34,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: FFMenu-dylib
-          # Đã sửa chuẩn xác đường dẫn có chữ debug
-          path: .theos/obj/debug/arm64/FFMenu.dylib
+          # Đã sửa lại tên file cho khớp với Makefile
+          path: .theos/obj/debug/arm64/libMobileGestalt.dylib
           if-no-files-found: error
