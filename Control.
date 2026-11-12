@@ -1,0 +1,9 @@
+Package: com.tienanh.ffmenu
+Name: FFMenu
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Free Fire OB55 VIP Menu
+Maintainer: TienAnh
+Author: TienAnh
+Section: Tweaks
+Depends: mobilesubstrate
